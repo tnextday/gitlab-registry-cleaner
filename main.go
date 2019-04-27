@@ -15,9 +15,10 @@
 package main
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
+	"net/http"
 	"os"
 	"regexp"
 	"sort"
@@ -45,7 +46,8 @@ var (
 	dryRun          bool
 	verbose         bool
 	flags           = pflag.NewFlagSet("", pflag.ExitOnError)
-	durationRegex   = regexp.MustCompile(`(\d+)]\s*([a-z]+)`)
+	durationRegex   = regexp.MustCompile(`(\d+)\s*([a-z]+)`)
+	httpClient      *http.Client
 )
 
 func parserDuration(s string) (time.Duration, error) {
@@ -73,7 +75,7 @@ func verboseLogf(format string, v ...interface{}) {
 	if !verbose {
 		return
 	}
-	log.Printf(format, v...)
+	fmt.Printf(format, v...)
 }
 
 func matchRegexList(s string, list []*regexp.Regexp) bool {
@@ -86,7 +88,7 @@ func matchRegexList(s string, list []*regexp.Regexp) bool {
 }
 
 func usage() {
-	log.Printf(`Usage of gitlab-registry-cleaner (%s)
+	fmt.Printf(`Usage of gitlab-registry-cleaner (%s)
 
 optional arguments:
 `, version)
@@ -96,20 +98,20 @@ optional arguments:
 func main() {
 	pflag.ErrHelp = nil
 	flags.Usage = usage
-	flags.StringVar(&gitlabToken, "token", "", "gitlab private token, environment: GITLAB_TOKEN")
-	flags.StringVar(&gitlabBaseUrl, "base-url", "https://gitlab.com/", "gitlab base url, environment: GITLAB_BASE_URL")
-	flags.StringVar(&projectId, "project-id", "", "the ID or path of the project, environment: GITLAB_PROJECT_ID")
-	flags.StringArrayVarP(&registriesRegex, "registry", "r", []string{}, "registry repositories regex list, clean all repositories in project if registry not set")
-	flags.StringArrayVarP(&tagsRegex, "tag", "t", []string{}, "image tag regex list")
-	flags.StringArrayVarP(&excludesRegex, "exclude", "e", []string{}, "exclude image tag regex list")
-	flags.IntVarP(&keepsN, "keep-n", "k", 0, "keeps N latest matching tagsRegex for each registry repositories")
+	flags.StringVar(&gitlabToken, "token", "", "Gitlab private token, environment: GITLAB_TOKEN")
+	flags.StringVar(&gitlabBaseUrl, "base-url", "https://gitlab.com/", "Gitlab base url, environment: GITLAB_BASE_URL")
+	flags.StringVar(&projectId, "project-id", "", "The ID or path of the project, environment: GITLAB_PROJECT_ID")
+	flags.StringArrayVarP(&registriesRegex, "registry", "r", []string{}, "Registry repository path regex list, clean all repositories in project if registry not set")
+	flags.StringArrayVarP(&tagsRegex, "tag", "t", []string{}, "Image tag regex list")
+	flags.StringArrayVarP(&excludesRegex, "exclude", "e", []string{}, "Exclude image tag regex list")
+	flags.IntVarP(&keepsN, "keep-n", "k", 0, "Keeps N latest matching tagsRegex for each registry repositories")
 	flags.StringVarP(&olderThen, "older-then", "o", "", "Tags to delete that are older than the given time, written in human readable form 1h, 1d, 1m.")
-	flags.BoolVarP(&dryRun, "dry-run", "n", false, "only print which images would be deleted")
-	flags.BoolVarP(&insecure, "insecure", "K", false, "allow insecure connections over plain HTTP")
-	flags.BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	flags.BoolVarP(&dryRun, "dry-run", "n", false, "Only print which images would be deleted")
+	flags.BoolVarP(&insecure, "insecure", "K", false, "Allow connections to SSL sites without certs")
+	flags.BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 	flags.SortFlags = false
 	if err := flags.Parse(os.Args); err != nil {
-		log.Printf("Parse args error: %v\n", err)
+		fmt.Printf("Parse args error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -129,14 +131,14 @@ func main() {
 		if env := os.Getenv("GITLAB_PROJECT_ID"); env != "" {
 			projectId = env
 		} else {
-			log.Printf("Project ID should't empty\n")
+			fmt.Printf("Project ID should't empty\n")
 			os.Exit(1)
 		}
 	}
 
 	olderThenDuration, err := parserDuration(olderThen)
 	if err != nil {
-		log.Println(err)
+		fmt.Println(err)
 		os.Exit(1)
 	}
 	verboseLogf("Gitlab base url: %v\n", gitlabBaseUrl)
@@ -158,7 +160,7 @@ func main() {
 		if regx, err := regexp.Compile(rs); err == nil {
 			registryRegs = append(registryRegs, regx)
 		} else {
-			log.Printf("Compile regex %s error: %v\n", rs, err)
+			fmt.Printf("Compile regex %s error: %v\n", rs, err)
 			os.Exit(1)
 		}
 	}
@@ -167,7 +169,7 @@ func main() {
 		if regx, err := regexp.Compile(rs); err == nil {
 			tagRegs = append(tagRegs, regx)
 		} else {
-			log.Printf("Compile regex %s error: %v\n", rs, err)
+			fmt.Printf("Compile regex %s error: %v\n", rs, err)
 			os.Exit(1)
 		}
 	}
@@ -175,41 +177,48 @@ func main() {
 		if regx, err := regexp.Compile(rs); err == nil {
 			excludeRegs = append(excludeRegs, regx)
 		} else {
-			log.Printf("Compile regex %s error: %v\n", rs, err)
+			fmt.Printf("Compile regex %s error: %v\n", rs, err)
 			os.Exit(1)
 		}
 	}
+	if insecure {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		httpClient = &http.Client{Transport: tr}
+	}
 
-	gl := gitlab.NewClient(nil, gitlabToken)
+	gl := gitlab.NewClient(httpClient, gitlabToken)
 	if err := gl.SetBaseURL(gitlabBaseUrl); err != nil {
-		log.Printf("Set gitlab base url error: %v\n", err)
+		fmt.Printf("Set gitlab base url error: %v\n", err)
 		os.Exit(1)
 	}
 	repos, _, err := gl.ContainerRegistry.ListRegistryRepositories(projectId, nil)
 	if err != nil {
-		log.Printf("List registry repositories error: %v\n", err)
+		fmt.Printf("List registry repositories error: %v\n", err)
 		os.Exit(1)
 	}
 	var matchedRepos []*gitlab.RegistryRepository
 	for _, repo := range repos {
-		if len(registryRegs) == 0 || !matchRegexList(repo.Name, registryRegs) {
-			verboseLogf("Skipped registry repository: %v\n", repo.Name)
+		if len(registryRegs) > 0 && !matchRegexList(repo.Path, registryRegs) {
+			verboseLogf("Skipped registry repository: %v\n", repo.Path)
 		} else {
-			verboseLogf("Matched registry repository: %v\n", repo.Name)
+			verboseLogf("Matched registry repository: %v\n", repo.Path)
 			matchedRepos = append(matchedRepos, repo)
 		}
 	}
 
 	if len(matchedRepos) == 0 {
-		log.Println("There is no registry repository found.")
+		fmt.Println("There is no registry repository found.")
 		os.Exit(1)
 	}
 
 	for _, repo := range matchedRepos {
-		log.Printf("Searching in %v\n", repo.Path)
-		tags, _, err := gl.ContainerRegistry.ListRegistryRepositoryTags(projectId, repo.ID, nil)
+		fmt.Printf("Searching in %v\n", repo.Path)
+		opt := &gitlab.ListRegistryRepositoryTagsOptions{PerPage: 10000}
+		tags, _, err := gl.ContainerRegistry.ListRegistryRepositoryTags(projectId, repo.ID, opt)
 		if err != nil {
-			log.Printf("List registry repository tags failed, path: %s, error: %v\n", repo.Path, err)
+			fmt.Printf("List registry repository tags failed, path: %s, error: %v\n", repo.Path, err)
 			continue
 		}
 		var matchedTags []*gitlab.RegistryRepositoryTag
@@ -222,10 +231,9 @@ func main() {
 
 			if len(excludeRegs) > 0 && matchRegexList(tag.Name, excludeRegs) {
 				verboseLogf("Skipped tag because of exclude rule: %v\n", tag.Name)
-
 				continue
 			}
-			if len(tagRegs) == 0 || !matchRegexList(tag.Name, tagRegs) {
+			if len(tagRegs) > 0 && !matchRegexList(tag.Name, tagRegs) {
 				verboseLogf("Skipped tag: %v\n", tag.Name)
 			} else {
 				verboseLogf("Matched tag: %v\n", tag.Name)
@@ -233,13 +241,13 @@ func main() {
 			}
 		}
 		if keepsN > 0 && len(matchedTags) <= keepsN {
-			log.Printf("Skip because of less mathced tags(%v) then keeps N(%v)\n", len(matchedTags), keepsN)
+			fmt.Printf("Skip because of less mathced tags(%v) then keeps N(%v)\n", len(matchedTags), keepsN)
 			continue
 		}
 		for _, tag := range matchedTags {
 			t, _, err := gl.ContainerRegistry.GetRegistryRepositoryTagDetail(projectId, repo.ID, tag.Name)
 			if err != nil {
-				log.Printf("Get registry repository tag detail failed, path: %s, error: %v\n", tag.Path, err)
+				fmt.Printf("Get registry repository tag detail failed, path: %s, error: %v\n", tag.Path, err)
 				continue
 			}
 			tag.CreatedAt = t.CreatedAt
@@ -274,18 +282,18 @@ func main() {
 		deletedCount := 0
 		for _, t := range tagsToDelete {
 			if dryRun {
-				log.Printf("[Dry run]%s will be delete\n", t.Path)
+				fmt.Printf("[Dry run]%s will be delete\n", t.Path)
 				continue
 			}
-			log.Printf("Delete %s ", t.Path)
+			fmt.Printf("Delete %s ", t.Path)
 			_, err := gl.ContainerRegistry.DeleteRegistryRepositoryTag(projectId, repo.ID, t.Name)
 			if err == nil {
 				deletedCount++
-				log.Println("OK")
+				fmt.Println("OK")
 			} else {
-				log.Println("error:", err)
+				fmt.Println("error:", err)
 			}
 		}
-		log.Printf("%v/%v tags have been deleted in %v\n", deletedCount, len(tagsToDelete), repo.Path)
+		fmt.Printf("%v/%v tags have been deleted in %v\n", deletedCount, len(tagsToDelete), repo.Path)
 	}
 }
