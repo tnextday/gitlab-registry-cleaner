@@ -1,0 +1,32 @@
+#variables:
+#  GITLAB_BASE_URL: https://gitlab.xxx.com
+#  GITLAB_PROJECT: foo/bar
+#  DOCKER_IMAGE: https://gitlab.xxx.com:3000/foo/bar
+
+
+stages:
+  - build
+  - cleanup
+
+
+build-image:
+  stage: build
+  image: docker:git
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN
+    - export IMAGE_TAG=$(git describe --tags)
+  script:
+    - docker build --build-arg GOPROXY=$GOPROXY -t $DOCKER_IMAGE -t $DOCKER_IMAGE:$IMAGE_TAG .
+    - docker push $DOCKER_IMAGE:IMAGE_TAG
+    - docker push $DOCKER_IMAGE
+    - docker rmi $DOCKER_IMAGE $DOCKER_IMAGE:$IMAGE_TAG
+
+
+# Cleanup all registry repositories in $GITLAB_PROJECT
+cleanup-registries:
+  stage: cleanup
+  image: tnextday/gitlab-registry-cleaner
+  before_script:
+    - export GITLAB_TOKEN=$CI_BUILD_TOKEN
+  script:
+    - gitlab-registry-cleaner -e '^v?[0-9.]+$' -n 5 -o 1m

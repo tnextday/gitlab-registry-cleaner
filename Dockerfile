@@ -1,11 +1,14 @@
 FROM golang:latest AS build-env
 
-ENV CGO_ENABLED=0
+ARG GOPROXY=""
 
 WORKDIR /src
 ADD . /src
 
-RUN go build
+RUN set -ex \
+    && export GOPROXY=$GOPROXY \
+    && export CGO_ENABLED=0 \
+    && make
 
 
 FROM alpine
