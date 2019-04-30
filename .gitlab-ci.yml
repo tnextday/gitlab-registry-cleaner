@@ -29,4 +29,4 @@ cleanup-registries:
   before_script:
     - export GITLAB_TOKEN=$CI_BUILD_TOKEN
   script:
-    - gitlab-registry-cleaner -e '^v?[0-9.]+$' -n 5 -o 1m
+    - gitlab-registry-cleaner --exclude '^v?[0-9.]+$' --keep-n 5 --older-then 1m

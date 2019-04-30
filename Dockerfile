@@ -13,7 +13,7 @@ RUN set -ex \
 
 FROM alpine
 
-COPY --from=build-env /src/gitlab-registry-cleaner /usr/bin/
+COPY --from=build-env /src/build/linux-amd64/gitlab-registry-cleaner /usr/bin/
 
 ENV GITLAB_TOKEN=""
 ENV GITLAB_BASE_URL=""
