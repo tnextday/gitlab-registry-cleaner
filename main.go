@@ -104,7 +104,7 @@ func main() {
 	pflag.Usage = usage
 	pflag.StringVarP(&gitlabToken, "token", "T", "", "Gitlab private token, environment: GITLAB_TOKEN")
 	pflag.StringVar(&gitlabBaseUrl, "base-url", "https://gitlab.com/", "Gitlab base url, environment: GITLAB_BASE_URL")
-	pflag.StringVarP(&projectId, "project", "p", "", "[REQUESTED]The ID or path of the project, environment: GITLAB_PROJECT_ID")
+	pflag.StringVarP(&projectId, "project", "p", "", "[REQUIRED]The ID or path of the project, environment: GITLAB_PROJECT_ID")
 	pflag.StringArrayVarP(&registriesRegex, "registry", "r", []string{}, "Registry repository path regex list, clean all repositories in project if registry not set")
 	pflag.StringArrayVarP(&tagsRegex, "tag", "t", []string{}, "Image tag regex list")
 	pflag.StringArrayVarP(&excludesRegex, "exclude", "e", []string{}, "Exclude image tag regex list")
@@ -145,7 +145,7 @@ func main() {
 		if env := os.Getenv("GITLAB_PROJECT_ID"); env != "" {
 			projectId = env
 		} else {
-			fmt.Println("Project ID requested!")
+			fmt.Println("Project ID required!")
 			fmt.Printf("try '%s -h' for more information\n", os.Args[0])
 			os.Exit(1)
 		}
