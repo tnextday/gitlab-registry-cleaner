@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,8 +31,6 @@ import (
 
 	"github.com/spf13/pflag"
 )
-
-const version = "v0.1"
 
 var (
 	gitlabToken     string
@@ -45,9 +44,13 @@ var (
 	insecure        bool
 	dryRun          bool
 	verbose         bool
-	flags           = pflag.NewFlagSet("", pflag.ExitOnError)
+	printVersion    bool
+	help            bool
 	durationRegex   = regexp.MustCompile(`(\d+)\s*([a-z]+)`)
 	httpClient      *http.Client
+
+	AppVersion = "dev"
+	BuildTime  = ""
 )
 
 func parserDuration(s string) (time.Duration, error) {
@@ -88,31 +91,42 @@ func matchRegexList(s string, list []*regexp.Regexp) bool {
 }
 
 func usage() {
-	fmt.Printf(`Usage of gitlab-registry-cleaner (%s)
+	fmt.Printf(`Usage of gitlab-registry-cleaner
 
-optional arguments:
-`, version)
-	flags.PrintDefaults()
+Options:
+`)
+	pflag.PrintDefaults()
+	os.Exit(0)
 }
 
 func main() {
 	pflag.ErrHelp = nil
-	flags.Usage = usage
-	flags.StringVar(&gitlabToken, "token", "", "Gitlab private token, environment: GITLAB_TOKEN")
-	flags.StringVar(&gitlabBaseUrl, "base-url", "https://gitlab.com/", "Gitlab base url, environment: GITLAB_BASE_URL")
-	flags.StringVar(&projectId, "project-id", "", "The ID or path of the project, environment: GITLAB_PROJECT_ID")
-	flags.StringArrayVarP(&registriesRegex, "registry", "r", []string{}, "Registry repository path regex list, clean all repositories in project if registry not set")
-	flags.StringArrayVarP(&tagsRegex, "tag", "t", []string{}, "Image tag regex list")
-	flags.StringArrayVarP(&excludesRegex, "exclude", "e", []string{}, "Exclude image tag regex list")
-	flags.IntVarP(&keepsN, "keep-n", "k", 0, "Keeps N latest matching tagsRegex for each registry repositories")
-	flags.StringVarP(&olderThen, "older-then", "o", "", "Tags to delete that are older than the given time, written in human readable form 1h, 1d, 1m.")
-	flags.BoolVarP(&dryRun, "dry-run", "n", false, "Only print which images would be deleted")
-	flags.BoolVarP(&insecure, "insecure", "K", false, "Allow connections to SSL sites without certs")
-	flags.BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
-	flags.SortFlags = false
-	if err := flags.Parse(os.Args); err != nil {
-		fmt.Printf("Parse args error: %v\n", err)
-		os.Exit(1)
+	pflag.Usage = usage
+	pflag.StringVarP(&gitlabToken, "token", "T", "", "Gitlab private token, environment: GITLAB_TOKEN")
+	pflag.StringVar(&gitlabBaseUrl, "base-url", "https://gitlab.com/", "Gitlab base url, environment: GITLAB_BASE_URL")
+	pflag.StringVarP(&projectId, "project", "p", "", "[REQUESTED]The ID or path of the project, environment: GITLAB_PROJECT_ID")
+	pflag.StringArrayVarP(&registriesRegex, "registry", "r", []string{}, "Registry repository path regex list, clean all repositories in project if registry not set")
+	pflag.StringArrayVarP(&tagsRegex, "tag", "t", []string{}, "Image tag regex list")
+	pflag.StringArrayVarP(&excludesRegex, "exclude", "e", []string{}, "Exclude image tag regex list")
+	pflag.IntVarP(&keepsN, "keep-n", "k", 10, "Keeps N latest matching tagsRegex for each registry repositories")
+	pflag.StringVarP(&olderThen, "older-then", "o", "", "Tags to delete that are older than the given time, written in human readable form 1h, 1d, 1m")
+	pflag.BoolVarP(&dryRun, "dry-run", "n", false, "Only print which images would be deleted")
+	pflag.BoolVarP(&insecure, "insecure", "K", false, "Allow connections to SSL sites without certs")
+	pflag.BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
+	pflag.BoolVarP(&printVersion, "version", "V", false, "Print version and exit")
+	pflag.BoolVarP(&help, "help", "h", false, "Print help and exit")
+	pflag.CommandLine.SortFlags = false
+	pflag.Parse()
+
+	if printVersion {
+		fmt.Println("App Version:", AppVersion)
+		fmt.Println("Go Version:", runtime.Version())
+		fmt.Println("Build Time:", BuildTime)
+		os.Exit(0)
+	}
+
+	if help {
+		usage()
 	}
 
 	if gitlabToken == "" {
@@ -131,7 +145,8 @@ func main() {
 		if env := os.Getenv("GITLAB_PROJECT_ID"); env != "" {
 			projectId = env
 		} else {
-			fmt.Printf("Project ID should't empty\n")
+			fmt.Println("Project ID requested!")
+			fmt.Printf("try '%s -h' for more information\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
