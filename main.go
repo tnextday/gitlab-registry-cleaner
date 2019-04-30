@@ -145,7 +145,7 @@ func main() {
 		if env := os.Getenv("GITLAB_PROJECT_ID"); env != "" {
 			projectId = env
 		} else {
-			fmt.Println("Project ID required!")
+			fmt.Println("The project ID is required!")
 			fmt.Printf("try '%s -h' for more information\n", os.Args[0])
 			os.Exit(1)
 		}
