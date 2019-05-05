@@ -5,6 +5,13 @@ gitlab-registry-cleaner
 
 gitlab-registry-cleaner is a tool for batch cleaning gitlab image repositories. It supports multiple ways to match the images that need to be cleaned up, and is easy to integrate into gitlab CI.
 
+# Note 
+
+Currently Gitlab does not support the direct use of `CI_JOB_TOKEN` to delete the image, so you need to use a privileged user to create a private token, reference
+
+[#29566- Allow API project access with ci_job_token for internal project or public project with member only access to repository or private project](https://gitlab.com/gitlab-org/gitlab-ce/issues/29566)
+[#41084 - create ci-extended-job-token in the ci-job-info](https://gitlab.com/gitlab-org/gitlab-ce/issues/41084)
+
 # Usage
 
 ```
